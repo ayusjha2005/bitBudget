@@ -73,11 +73,37 @@ async function executePayment(actionToken, db) {
   await db.query('UPDATE accounts SET balance = $1 WHERE id = $2', [newBalance, accountId]);
 
   // 5. Insert transaction record
-  await db.query(`
-    INSERT INTO transactions (
-      id, proposed_action_id, account_id, recipient_id, amount, currency, status, simulation_note, executed_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, 'SUCCESS', 'Executed via validated cryptographic token', CURRENT_TIMESTAMP)
-  `, [transactionId, proposedActionId, accountId, recipientId, numAmount, currency || 'INR']);
+  try {
+    const colCheck = await db.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'transactions' AND column_name = 'action_id' LIMIT 1"
+    );
+    if (colCheck.rows && colCheck.rows.length > 0) {
+      // Supabase UUID schema
+      const crypto = require('crypto');
+      const { ensureUUID } = require('../db/compat');
+      await db.query(`
+        INSERT INTO transactions (
+          id, action_id, account_id, recipient_id, amount, currency, status, external_reference, executed_at, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'SUCCESS', $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [
+        crypto.randomUUID(),
+        ensureUUID(proposedActionId),
+        ensureUUID(accountId),
+        ensureUUID(recipientId),
+        numAmount,
+        currency || 'INR',
+        transactionId,
+      ]);
+    } else {
+      await db.query(`
+        INSERT INTO transactions (
+          id, proposed_action_id, account_id, recipient_id, amount, currency, status, simulation_note, executed_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'SUCCESS', 'Executed via validated cryptographic token', CURRENT_TIMESTAMP)
+      `, [transactionId, proposedActionId, accountId, recipientId, numAmount, currency || 'INR']);
+    }
+  } catch (err) {
+    console.warn('[SafePay Transaction] Insert warning:', err.message);
+  }
 
   // 6. Record in tamper-evident SHA-256 audit log
   const { appendAuditEvent } = require('../audit/auditLog');

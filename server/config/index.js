@@ -5,9 +5,13 @@ const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
 
-  // Database
+  // Database & Supabase
   databaseUrl: process.env.DATABASE_URL || '',
   useEmbeddedPostgres: process.env.USE_EMBEDDED_POSTGRES !== 'false',
+  supabase: {
+    url: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    anonKey: process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '',
+  },
 
   // Secrets & Signing
   actionSigningSecret: process.env.ACTION_SIGNING_SECRET || 'safepay_dev_action_signing_secret_994827419',

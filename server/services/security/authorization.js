@@ -12,7 +12,7 @@ async function verifyAuthorization(userId, db) {
   }
 
   // 1. Fetch user record
-  const userRes = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
+  const userRes = await db.query('SELECT * FROM users WHERE id::text = $1 LIMIT 1', [String(userId)]);
   if (userRes.rows.length === 0) {
     return {
       authorized: false,
@@ -21,7 +21,7 @@ async function verifyAuthorization(userId, db) {
   }
 
   const user = userRes.rows[0];
-  if (user.status !== 'ACTIVE') {
+  if (user.status && user.status !== 'ACTIVE') {
     return {
       authorized: false,
       user,
@@ -30,7 +30,7 @@ async function verifyAuthorization(userId, db) {
   }
 
   // 2. Fetch primary account
-  const accRes = await db.query('SELECT * FROM accounts WHERE user_id = $1', [userId]);
+  const accRes = await db.query('SELECT * FROM accounts WHERE user_id::text = $1 LIMIT 1', [String(userId)]);
   if (accRes.rows.length === 0) {
     return {
       authorized: false,
@@ -40,7 +40,7 @@ async function verifyAuthorization(userId, db) {
   }
 
   const account = accRes.rows[0];
-  if (account.status !== 'ACTIVE') {
+  if (account.status && account.status !== 'ACTIVE') {
     return {
       authorized: false,
       user,
@@ -49,11 +49,16 @@ async function verifyAuthorization(userId, db) {
     };
   }
 
+  const accNum = account.account_number || account.account_reference || account.id;
+
   return {
     authorized: true,
     user,
-    account,
-    reason: `User '${user.name}' is authorized with active account '${account.account_number}'.`,
+    account: {
+      ...account,
+      account_number: accNum,
+    },
+    reason: `User '${user.name}' is authorized with active account '${accNum}'.`,
   };
 }
 

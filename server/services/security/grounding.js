@@ -22,11 +22,13 @@ async function verifyGrounding(proposedAction, db) {
   let matchedInvoice = null;
 
   for (const ref of sourceRefs) {
-    const res = await db.query('SELECT * FROM invoices WHERE id = $1', [ref]);
-    if (res.rows.length > 0) {
-      matchedInvoice = res.rows[0];
-      break;
-    }
+    try {
+      const res = await db.query('SELECT * FROM invoices WHERE id::text = $1 OR invoice_number = $1 LIMIT 1', [String(ref)]);
+      if (res.rows.length > 0) {
+        matchedInvoice = res.rows[0];
+        break;
+      }
+    } catch (e) {}
   }
 
   if (!matchedInvoice) {

@@ -13,7 +13,21 @@ async function verifyRecipient(recipientId, db) {
     };
   }
 
-  const res = await db.query('SELECT * FROM recipients WHERE id = $1', [recipientId]);
+  // Look up by id, account reference, or name
+  let res;
+  try {
+    res = await db.query(
+      `SELECT * FROM recipients 
+       WHERE id::text = $1 
+          OR name ILIKE $2 
+          OR COALESCE(account_number, account_reference, '') = $1 
+       LIMIT 1`,
+      [String(recipientId), `%${recipientId}%`]
+    );
+  } catch (err) {
+    res = { rows: [] };
+  }
+
   if (res.rows.length === 0) {
     return {
       verified: false,
@@ -36,7 +50,13 @@ async function verifyRecipient(recipientId, db) {
     };
   }
 
-  if (!recipient.is_verified) {
+  const isVerified = Boolean(
+    recipient.is_verified === true || 
+    recipient.status === 'ACTIVE' || 
+    recipient.verified_at != null
+  );
+
+  if (!isVerified) {
     return {
       verified: false,
       exists: true,

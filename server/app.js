@@ -49,6 +49,7 @@ app.get('/healthz', (req, res) => {
 // API Routes
 app.use('/payment', require('./routes/payment'));
 app.use('/assistant', require('./routes/assistant'));
+app.use('/assistant', require('./routes/onboarding'));
 app.use('/invoice', require('./routes/invoice'));
 app.use('/attack', require('./routes/attack'));
 app.use('/audit', require('./routes/audit'));

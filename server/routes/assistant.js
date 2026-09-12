@@ -4,6 +4,7 @@ const { modelRouter } = require('../services/ai/modelRouter');
 const { parseTypedActionFromLlm } = require('../schemas/typedAction');
 const { evaluatePolicy } = require('../services/security/policyEngine');
 const { getDb } = require('../db/client');
+const { saveProposedAction, saveSecurityDecision } = require('../services/db/compat');
 
 /**
  * POST /assistant/message
@@ -13,12 +14,20 @@ const { getDb } = require('../db/client');
 router.post('/message', async (req, res, next) => {
   try {
     const db = await getDb();
-    const {
+    let {
       message,
       userId = 'USR_RAMESH_001',
       userReportedScam = false,
       documentContext = {},
     } = req.body;
+
+    // Resolve active userId from database if available
+    try {
+      const uRes = await db.query('SELECT id FROM users LIMIT 1');
+      if (uRes.rows.length > 0 && (!req.body.userId || req.body.userId === 'USR_RAMESH_001')) {
+        userId = uRes.rows[0].id;
+      }
+    } catch (e) {}
 
     if (!message || typeof message !== 'string') {
       return res.status(400).json({
@@ -88,41 +97,29 @@ router.post('/message', async (req, res, next) => {
     }, db);
 
     // 5. Record proposed action & decision in database
-    const actionId = evaluation.actionId || `ACT_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const decisionId = `DEC_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-
-    await db.query(`
-      INSERT INTO proposed_actions (
-        id, user_id, action_type, amount, currency, recipient_id, source_refs, reason, raw_llm_output, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      ON CONFLICT (id) DO UPDATE SET status = $10
-    `, [
-      actionId,
+    const actionId = await saveProposedAction(db, {
+      id: evaluation.actionId,
       userId,
-      candidateAction.actionType,
-      candidateAction.amount,
-      candidateAction.currency,
-      candidateAction.recipientId,
-      JSON.stringify(candidateAction.sourceRefs || []),
-      candidateAction.reason,
-      aiResult.rawOutput,
-      evaluation.decision,
-    ]);
+      actionType: candidateAction.actionType,
+      amount: candidateAction.amount,
+      currency: candidateAction.currency,
+      recipientId: candidateAction.recipientId,
+      sourceRefs: candidateAction.sourceRefs,
+      reason: candidateAction.reason,
+      rawOutput: aiResult.rawOutput,
+      status: evaluation.decision,
+    });
 
-    await db.query(`
-      INSERT INTO security_decisions (
-        id, proposed_action_id, decision, internal_state, reasons, risk_indicators, rule_results, action_token
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-    `, [
-      decisionId,
+    const decisionId = await saveSecurityDecision(db, {
       actionId,
-      evaluation.decision,
-      evaluation.internalState,
-      JSON.stringify(evaluation.reasons || []),
-      JSON.stringify(evaluation.riskIndicators || []),
-      JSON.stringify(evaluation.ruleResults || {}),
-      evaluation.actionToken || null,
-    ]);
+      decision: evaluation.decision,
+      internalState: evaluation.internalState,
+      reasons: evaluation.reasons,
+      riskIndicators: evaluation.riskIndicators,
+      ruleResults: evaluation.ruleResults,
+      actionToken: evaluation.actionToken || null,
+      riskScore: evaluation.decision === 'REFUSE' ? 90 : evaluation.requires2FA ? 45 : 15,
+    });
 
     res.status(200).json({
       success: true,
@@ -155,6 +152,52 @@ router.post('/message', async (req, res, next) => {
       modelProviderUsed: aiResult.providerUsed,
       fallbackTriggered: aiResult.fallbackTriggered,
       latencyMs: evaluation.latencyMs,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /assistant/user
+ * Returns profile and balance of the primary account from the connected database
+ */
+router.get('/user', async (req, res, next) => {
+  try {
+    const db = await getDb();
+    const userRes = await db.query(`
+      SELECT u.id, u.name, 
+             COALESCE(u.phone, '') as phone,
+             COALESCE(u.language, 'en') as preferred_language,
+             COALESCE(a.balance, 0.00) as balance,
+             COALESCE(a.currency, 'INR') as currency
+      FROM users u 
+      LEFT JOIN accounts a ON a.user_id = u.id 
+      LIMIT 1
+    `);
+
+    if (userRes.rows.length === 0) {
+      return res.status(200).json({
+        success: true,
+        user: null,
+        balance: 0.00,
+        currency: 'INR',
+        message: 'No users found in connected database. Ready for user creation.',
+      });
+    }
+
+    const row = userRes.rows[0];
+    res.status(200).json({
+      success: true,
+      user: {
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        phone: row.phone,
+        preferredLanguage: row.preferred_language,
+      },
+      balance: parseFloat(row.balance || 0),
+      currency: row.currency || 'INR',
     });
   } catch (err) {
     next(err);

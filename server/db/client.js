@@ -13,7 +13,8 @@ let isInitialized = false;
 async function getDb() {
   if (dbClient) return dbClient;
 
-  if (config.databaseUrl && config.databaseUrl.startsWith('postgres')) {
+  const isTest = process.env.NODE_ENV === 'test';
+  if (!isTest && config.databaseUrl && config.databaseUrl.startsWith('postgres')) {
     const { Pool } = require('pg');
     const pool = new Pool({
       connectionString: config.databaseUrl,
@@ -56,24 +57,52 @@ async function getDb() {
 }
 
 /**
- * Executes schema migration and demo seed data
+ * Executes schema migration (non-destructive CREATE TABLE IF NOT EXISTS)
+ * and skips seed data when connecting an external database.
  */
 async function initializeSchemaAndSeed(forceReseed = false) {
   const db = await getDb();
-  const schemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
-  const seedSql = fs.readFileSync(path.join(__dirname, 'seed.sql'), 'utf-8');
 
-  // Split and execute SQL statements
+  // Check if tables already exist in connected database
+  try {
+    const existing = await db.query(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users'"
+    );
+    if (existing.rows && existing.rows.length > 0) {
+      console.log('[SafePay AI] Connected to existing schema in database.');
+      isInitialized = true;
+      return true;
+    }
+  } catch (err) {
+    // If information_schema query fails, fallback to standard schema creation
+  }
+
+  const schemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
+
+  // Execute schema tables creation
   if (db.exec) {
     await db.exec(schemaSql);
-    if (forceReseed || !isInitialized) {
-      await db.exec(seedSql);
-    }
   } else {
-    // External pg requires statement-by-statement or direct execution
     await db.query(schemaSql);
-    if (forceReseed || !isInitialized) {
-      await db.query(seedSql);
+  }
+
+  // Seed data is completely removed for external database connections.
+  // Only runs if explicitly opted in via SEED_DATABASE=true or during test suites.
+  const isTest = process.env.NODE_ENV === 'test';
+  const shouldSeed = process.env.SEED_DATABASE === 'true' || (isTest && forceReseed);
+
+  if (shouldSeed) {
+    const seedFile = isTest ? 'fixtures.sql' : 'seed.sql';
+    const seedPath = path.join(__dirname, seedFile);
+    if (fs.existsSync(seedPath)) {
+      const seedSql = fs.readFileSync(seedPath, 'utf-8');
+      if (seedSql.trim()) {
+        if (db.exec) {
+          await db.exec(seedSql);
+        } else {
+          await db.query(seedSql);
+        }
+      }
     }
   }
 

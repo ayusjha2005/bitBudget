@@ -28,6 +28,7 @@ def analyze_document(file_path_or_content):
         if file_path_or_content.lower().endswith(".pdf"):
             result["isPdf"] = True
             try:
+                # pyrefly: ignore [missing-import]
                 import pypdf
                 reader = pypdf.PdfReader(file_path_or_content)
                 
