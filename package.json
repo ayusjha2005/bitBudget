@@ -1,0 +1,36 @@
+{
+  "name": "safepay-ai",
+  "version": "1.0.0",
+  "description": "SafePay AI - Injection-Resistant Financial Assistant with Verifiable Privacy (FS-2605)",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "server": "node server/index.js",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand --forceExit",
+    "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --watch",
+    "client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "dev": "node server/index.js"
+  },
+  "keywords": [
+    "fintech",
+    "security",
+    "prompt-injection",
+    "zero-knowledge",
+    "tamper-evident-audit"
+  ],
+  "author": "SafePay AI Team",
+  "license": "MIT",
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "pg": "^8.23.0",
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "jest": "^30.5.1",
+    "supertest": "^7.2.2"
+  }
+}
