@@ -13,17 +13,24 @@ async function verifyRecipient(recipientId, db) {
     };
   }
 
-  // Look up by id, account reference, or name
+  // Look up by id, name, or account identifier safely across schemas
   let res;
   try {
     res = await db.query(
-      `SELECT * FROM recipients 
-       WHERE id::text = $1 
-          OR name ILIKE $2 
-          OR COALESCE(account_number, account_reference, '') = $1 
-       LIMIT 1`,
+      `SELECT * FROM recipients WHERE id::text = $1 OR name ILIKE $2 LIMIT 1`,
       [String(recipientId), `%${recipientId}%`]
     );
+    if (res.rows.length === 0) {
+      try {
+        res = await db.query('SELECT * FROM recipients WHERE account_number = $1 LIMIT 1', [String(recipientId)]);
+      } catch (e1) {
+        try {
+          res = await db.query('SELECT * FROM recipients WHERE account_reference = $1 LIMIT 1', [String(recipientId)]);
+        } catch (e2) {
+          res = { rows: [] };
+        }
+      }
+    }
   } catch (err) {
     res = { rows: [] };
   }
